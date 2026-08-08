@@ -1,0 +1,67 @@
+import os
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
+
+# ===== Customize your product list here =====
+products = [
+    {"id": 1, "name": "T-Shirt", "price": 15000, "desc": "Cotton, White"},
+    {"id": 2, "name": "Jeans", "price": 35000, "desc": "Blue Denim Pants"},
+]
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = []
+    for p in products:
+        keyboard.append([InlineKeyboardButton(f"{p['name']} - {p['price']} Ks", callback_data=f"view_{p['id']}")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("👇 Please choose the item you want to buy", reply_markup=reply_markup)
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data.startswith("view_"):
+        pid = int(data.split("_")[1])
+        product = next((p for p in products if p["id"] == pid), None)
+        if not product:
+            await query.edit_message_text("Item not found")
+            return
+        text = f"{product['name']}\nPrice - {product['price']} Ks\n{product['desc']}\n\nAre you sure you want to buy?"
+        keyboard = [[
+            InlineKeyboardButton("✅ Buy", callback_data=f"order_{pid}"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel")
+        ]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("order_"):
+        pid = int(data.split("_")[1])
+        product = next((p for p in products if p["id"] == pid), None)
+        if not product:
+            await query.edit_message_text("Product error")
+            return
+        user = query.from_user
+        order_text = (
+            f"📦 New Order\n"
+            f"Item: {product['name']}\n"
+            f"Price: {product['price']} Ks\n"
+            f"Customer: @{user.username or user.first_name} (ID: {user.id})"
+        )
+        await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=order_text)
+        await query.edit_message_text("✅ Order received. We will contact you soon.")
+
+    elif data == "cancel":
+        await query.edit_message_text("Order cancelled.")
+
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
